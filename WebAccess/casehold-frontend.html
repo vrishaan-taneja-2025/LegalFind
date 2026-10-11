@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LegalFind — Case Law Retrieval</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    :root{--navy:#14263f;--gold:#a98035;--paper:#f8f7f4;--muted:#667184}
+    body{background:var(--paper);color:#202938;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+    .topbar{background:#0e1b2e;color:#fff}.brand{font:700 1.45rem Georgia,serif;letter-spacing:.02em}.brand span{color:#d4b978}
+    .hero{background:var(--navy);color:#fff;padding:3.2rem 0 4rem}.hero p{color:#c1cad6;max-width:690px}
+    .search-panel{margin-top:1.8rem;background:#fff;border-radius:.5rem;padding:1rem;box-shadow:0 12px 36px #08132340}
+    .search-panel input{height:3.25rem;font-size:1.05rem}.search-panel button{min-width:120px}
+    .search-panel select{height:3.25rem;min-width:210px;color:#263247}
+    main{max-width:1200px}.results-heading{font:600 1.5rem Georgia,serif;color:var(--navy)}
+    .result{background:#fff;border:1px solid #e0e3e8;border-radius:.4rem;padding:1.15rem 1.25rem;margin-bottom:.85rem}
+    .comparison{background:#fff;border:1px solid #e0e3e8;border-radius:.4rem;padding:1.25rem;margin-top:1.5rem}
+    .comparison h2{font:600 1.35rem Georgia,serif;color:var(--navy)}
+    .comparison p{color:#4f5b6c;line-height:1.7}
+    .comparison .metric{background:var(--paper);border:1px solid #e6e8ec;border-radius:.35rem;padding:.9rem;height:100%}
+    .comparison .metric strong{display:block;color:var(--navy);font-size:1.2rem}
+    .record-context{margin-top:.8rem;padding:1rem;background:var(--paper);border:1px solid #e6e8ec;border-radius:.35rem}
+    .record-context h4{font:600 1rem Georgia,serif;color:var(--navy);margin:1rem 0 .45rem}
+    .record-context h4:first-child{margin-top:0}.record-context p{white-space:pre-wrap;line-height:1.65}
+    .candidate{padding:.8rem 0;border-top:1px solid #e2e5e9}.label-badge{font-size:.75rem;color:#285b42;background:#e4f1e9;border-radius:99px;padding:.2rem .55rem;font-weight:600}
+    .result h3{font:600 1.2rem Georgia,serif;color:var(--navy);margin-bottom:.55rem}.rank{color:var(--gold);font-weight:700}
+    .score{font-size:.82rem;color:var(--muted);font-variant-numeric:tabular-nums}.holding{line-height:1.7;white-space:pre-wrap}
+    .more{color:var(--navy);font-weight:600}.empty{border:1px dashed #c8ced7;background:#fff;border-radius:.4rem;padding:2rem;text-align:center;color:var(--muted)}
+    #status[role=alert]{color:#9a3030}.spinner-border{width:1rem;height:1rem}footer{color:var(--muted)}
+    @media(max-width:575px){.hero{padding-top:2.5rem}.search-panel button{width:100%}}
+  </style>
+</head>
+<body>
+  <header class="topbar py-3"><div class="container d-flex align-items-center gap-3"><div class="brand">Legal<span>Find</span></div><span class="small text-white-50">Legal Case Retrieval System</span></div></header>
+  <section class="hero"><div class="container">
+    <div class="text-uppercase small fw-semibold mb-2" style="letter-spacing:.14em;color:#d4b978">CaseHOLD research</div>
+    <h1 class="display-6 mb-2" style="font-family:Georgia,serif">Find relevant legal holdings</h1>
+    <p class="mb-0">Search the CaseHOLD corpus with BM25 and TF-IDF cosine similarity. Each method ranks the same query independently.</p>
+    <form class="search-panel" id="search-form" role="search">
+      <label class="visually-hidden" for="query">Search legal holdings</label>
+      <div class="d-flex flex-column flex-sm-row gap-2">
+        <input class="form-control" id="query" name="query" type="search" placeholder="Describe a legal issue or fact pattern" autocomplete="off" required maxlength="1000">
+        <label class="visually-hidden" for="scope">Search within</label>
+        <select class="form-select" id="scope" name="scope" aria-label="Search within">
+          <option value="holdings">Holdings</option>
+          <option value="citations">Citations (citing prompts)</option>
+        </select>
+        <button class="btn btn-primary" id="search-button" type="submit" style="background:#1d3557;border-color:#1d3557">Search</button>
+      </div>
+    </form>
+  </div></section>
+  <main class="container py-4 py-lg-5">
+    <div id="status" class="mb-3" aria-live="polite"></div>
+    <section id="results" aria-label="Search results">
+      <div class="empty"><h2 class="h5" style="font-family:Georgia,serif;color:#14263f">Search the CaseHOLD holdings</h2><p class="mb-0">Enter a natural-language query above to see results from both ranking methods.</p></div>
+    </section>
+  </main>
+  <footer class="container py-4 small border-top">LegalFind · BM25 and TF-IDF results use the configured project database.</footer>
+  <script>
+    const form=document.getElementById('search-form');
+    const queryInput=document.getElementById('query');
+    const scopeInput=document.getElementById('scope');
+    const results=document.getElementById('results');
+    const statusBox=document.getElementById('status');
+    const button=document.getElementById('search-button');
+    const escapeHTML=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    function renderMethod(title,items){
+      const heading=`<h2 class="results-heading h4 mb-3">${title}<span class="text-secondary fs-6 ms-2">${items.length} results</span></h2>`;
+      if(!items.length)return heading+'<div class="empty mb-4">No matching records were found for this method.</div>';
+      return heading+items.map((item,index)=>{
+        const raw=String(item.holding_text??''); const full=escapeHTML(raw);
+        const short=escapeHTML(raw.slice(0,700))+(raw.length>700?'…':'');
+        const id=escapeHTML(item.doc_id);
+        const recordType=scopeInput.value==='citations'?'Example':'Holding';
+        return `<article class="result"><div class="d-flex justify-content-between gap-3 align-items-start"><div><div class="rank">#${index+1} · ${recordType} ${id}</div></div><div class="score">Score ${Number(item.score).toFixed(5)}</div></div><p class="holding mt-3 mb-2">${short}</p>${raw.length>700?`<details><summary class="more">Read full ${scopeInput.value==='citations'?'citing prompt':'holding'}</summary><p class="holding mt-2 mb-0">${full}</p></details>`:''}<button type="button" class="btn btn-link btn-sm p-0 more context-toggle mt-2" data-scope="${scopeInput.value}" data-doc-id="${id}" aria-expanded="false">Show full CaseHOLD context</button></article>`;
+      }).join('');
+    }
+    function renderComparison(bm25,tfidf){
+      const bmIds=bm25.map(item=>String(item.doc_id));
+      const tfIds=tfidf.map(item=>String(item.doc_id));
+      const tfRank=new Map(tfIds.map((id,index)=>[id,index+1]));
+      const bmRank=new Map(bmIds.map((id,index)=>[id,index+1]));
+      const shared=bmIds.filter(id=>tfRank.has(id));
+      const top10Overlap=shared.length;
+      const averageMovement=shared.length
+        ? shared.reduce((sum,id)=>sum+Math.abs(bmRank.get(id)-tfRank.get(id)),0)/shared.length
+        : null;
+      const bmTop=bm25[0], tfTop=tfidf[0];
+      let summary='Both rankings returned no matching records for this query.';
+      if(bmTop&&tfTop){
+        if(String(bmTop.doc_id)===String(tfTop.doc_id)){
+          summary=`Both methods ranked record ${escapeHTML(bmTop.doc_id)} first. Their scores use different scales, so compare the order and overlap rather than the raw score values.`;
+        }else{
+          summary=`The methods selected different top results: BM25 ranked record ${escapeHTML(bmTop.doc_id)} first, while TF-IDF ranked record ${escapeHTML(tfTop.doc_id)} first. Their scores use different scales, so compare the order and overlap rather than the raw score values.`;
+        }
+      }else if(bmTop||tfTop){
+        summary=`${bmTop?'BM25':'TF-IDF cosine'} returned results, while ${bmTop?'TF-IDF cosine':'BM25'} returned none for this query.`;
+      }
+      return `<section class="comparison" aria-labelledby="comparison-title">
+        <h2 id="comparison-title">How the models performed on this query</h2>
+        <p class="mt-2 mb-3">${summary}</p>
+        <div class="row g-3">
+          <div class="col-12 col-md-4"><div class="metric"><span class="small text-secondary">Records shared in these result lists</span><strong>${top10Overlap}</strong><span class="small text-secondary">appearing in both returned lists</span></div></div>
+          <div class="col-12 col-md-4"><div class="metric"><span class="small text-secondary">Average rank difference for shared records</span><strong>${averageMovement===null?'—':averageMovement.toFixed(1)+' places'}</strong><span class="small text-secondary">Lower means more similar ordering</span></div></div>
+          <div class="col-12 col-md-4"><div class="metric"><span class="small text-secondary">First-result agreement</span><strong>${bmTop&&tfTop?(String(bmTop.doc_id)===String(tfTop.doc_id)?'Same record':'Different records'):'Not comparable'}</strong><span class="small text-secondary">Based on each method’s top-ranked record</span></div></div>
+        </div>
+        <p class="small text-secondary mt-3 mb-0">These are query-specific retrieval measurements, not an overall accuracy evaluation. Overall model performance requires relevance labels and a benchmark such as Precision@k or nDCG.</p>
+      </section>`;
+    }
+    function renderRecordContext(data){
+      if(data.scope==='citations'){
+        const candidates=(data.candidates||[]).map(candidate=>`<div class="candidate"><div class="d-flex flex-wrap gap-2 align-items-center mb-2"><strong>Candidate ${candidate.candidate_index+1} · Holding ${escapeHTML(candidate.holding_id)}</strong>${candidate.is_label?'<span class="label-badge">Label given · correct answer</span>':''}</div><p class="mb-0">${escapeHTML(candidate.holding_text)}</p></div>`).join('');
+        return `<div class="record-context"><h4>Full citing prompt</h4><p>${escapeHTML(data.citing_prompt)}</p><h4>All available holdings · dataset label: candidate ${Number(data.label)+1}</h4>${candidates||'<p>No candidate holdings were linked to this citation.</p>'}</div>`;
+      }
+      const sources=(data.sources||[]).map(source=>`<div class="candidate"><div class="d-flex flex-wrap gap-2 align-items-center mb-2"><strong>Example ${escapeHTML(source.example_id)}</strong><span class="small text-secondary">This holding is candidate ${source.candidate_index+1} · dataset label candidate ${source.label+1}</span>${source.is_label?'<span class="label-badge">Label given · correct answer</span>':''}</div><p class="mb-0">${escapeHTML(source.citing_prompt)}</p></div>`).join('');
+      return `<div class="record-context"><h4>Full holding</h4><p>${escapeHTML(data.holding_text)}</p><h4>All available citing prompts and labels (${(data.sources||[]).length})</h4>${sources||'<p>No citing prompts were linked to this holding.</p>'}</div>`;
+    }
+    results.addEventListener('click',async event=>{
+      const toggle=event.target.closest('.context-toggle');
+      if(!toggle)return;
+      const existing=toggle.nextElementSibling;
+      if(existing?.classList.contains('record-context')){
+        existing.hidden=!existing.hidden;
+        toggle.setAttribute('aria-expanded',String(!existing.hidden));
+        toggle.textContent=existing.hidden?'Show full CaseHOLD context':'Hide full CaseHOLD context';
+        return;
+      }
+      toggle.disabled=true; toggle.textContent='Loading full context…';
+      try{
+        const response=await fetch('/details',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scope:toggle.dataset.scope,doc_id:toggle.dataset.docId})});
+        const data=await response.json();
+        if(!response.ok)throw new Error(data.detail||'Could not load the full record context.');
+        toggle.insertAdjacentHTML('afterend',renderRecordContext(data));
+        toggle.setAttribute('aria-expanded','true'); toggle.textContent='Hide full CaseHOLD context';
+      }catch(error){
+        statusBox.className='mb-3'; statusBox.setAttribute('role','alert'); statusBox.textContent=error.message||'Could not load the full record context.';
+        toggle.textContent='Retry full CaseHOLD context';
+      }finally{toggle.disabled=false;}
+    });
+    form.addEventListener('submit',async event=>{
+      event.preventDefault(); const query=queryInput.value.trim();
+      if(!query){queryInput.focus();return;}
+      button.disabled=true; button.innerHTML='<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Searching';
+      const selectedScope=scopeInput.value;
+      statusBox.className='mb-3 text-secondary'; statusBox.textContent=`Searching ${selectedScope==='citations'?'citations (citing prompts)':'holdings'} with both retrieval methods…`;
+      results.innerHTML='<div class="empty">Loading ranked records…</div>';
+      try{
+        const response=await fetch('/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query,scope:selectedScope})});
+        const data=await response.json();
+        if(!response.ok)throw new Error(data.detail||'Search could not be completed.');
+        results.innerHTML=`<div class="row g-4"><section class="col-12 col-lg-6" aria-label="BM25 results">${renderMethod('BM25',data.bm25)}</section><section class="col-12 col-lg-6" aria-label="TF-IDF cosine results">${renderMethod('TF-IDF cosine',data.tfidf)}</section></div>${renderComparison(data.bm25,data.tfidf)}`;
+        statusBox.className='mb-3 text-secondary'; statusBox.removeAttribute('role'); statusBox.textContent=`Results for “${query}” in ${selectedScope==='citations'?'citations (citing prompts)':'holdings'}`;
+      }catch(error){
+        statusBox.className='mb-3'; statusBox.setAttribute('role','alert'); statusBox.textContent=error.message||'Search failed. Please try again.';
+        results.innerHTML='<div class="empty">The search could not be completed. Check the database connection and try again.</div>';
+      }finally{button.disabled=false;button.textContent='Search';}
+    });
+  </script>
+</body>
+</html>

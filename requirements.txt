@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+jinja2
+python-multipart
+datasets
+pandas
+numpy
+scikit-learn
+rank-bm25
+snowballstemmer
+
+SQLAlchemy>=2.0
+psycopg[binary]
+python-dotenv
