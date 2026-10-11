@@ -204,7 +204,9 @@ def _build_indexes(expected):
             document_frequency = Counter()
             total_length = 0
             buffered = []
+            processed_documents = 0
             for doc_id, content in cursor:
+                processed_documents += 1
                 frequencies = Counter(tokenize(content))
                 doc_length = sum(frequencies.values())
                 total_length += doc_length
@@ -224,6 +226,15 @@ def _build_indexes(expected):
                             (:scope, :term, :doc_id, :term_frequency, :document_length)
                     """), buffered)
                     buffered.clear()
+                if (
+                    processed_documents % 5000 == 0
+                    or processed_documents == document_count
+                ):
+                    print(
+                        f"{scope.capitalize()} index progress: "
+                        f"{processed_documents:,}/{document_count:,} documents.",
+                        flush=True,
+                    )
             if buffered:
                 connection.execute(text("""
                     INSERT INTO casehold_postings
@@ -317,6 +328,39 @@ def initialize_instance():
     if _indexes_are_ready(expected):
         print("Existing SQLite inverted indexes are complete; reusing them.")
     else:
+        _build_indexes(expected)
+    if not _indexes_are_ready(expected):
+        raise RuntimeError("SQLite inverted-index validation failed.")
+
+
+def ensure_search_indexes():
+    """Repair missing SQLite search indexes from already loaded base tables."""
+    with engine.connect() as connection:
+        tables = {
+            row[0] for row in connection.execute(text(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ))
+        }
+        missing = {"examples", "holdings", "candidates"} - tables
+        if missing:
+            raise RuntimeError(
+                "SQLite CaseHOLD data is not initialized. Run setup.bat "
+                "to download the dataset and prepare the database."
+            )
+        expected = {
+            table: connection.execute(
+                text(f"SELECT COUNT(*) FROM {table}")
+            ).scalar_one()
+            for table in ("examples", "holdings", "candidates")
+        }
+
+    if not expected["examples"] or not expected["holdings"]:
+        raise RuntimeError(
+            "SQLite CaseHOLD tables are empty. Run setup.bat to populate "
+            "the database."
+        )
+    if not _indexes_are_ready(expected):
+        print("SQLite search indexes are missing or incomplete; rebuilding...")
         _build_indexes(expected)
     if not _indexes_are_ready(expected):
         raise RuntimeError("SQLite inverted-index validation failed.")

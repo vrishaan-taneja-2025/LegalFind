@@ -3,6 +3,7 @@ uvicorn[standard]
 jinja2
 python-multipart
 datasets
+huggingface_hub
 pandas
 numpy
 scikit-learn

@@ -1,6 +1,7 @@
 """FastAPI adapter for the existing CaseHOLD retrieval implementations."""
 
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -10,7 +11,19 @@ from pydantic import BaseModel, Field
 LOGGER = logging.getLogger(__name__)
 FRONTEND = Path(__file__).resolve().parent / "casehold-frontend.html"
 
-app = FastAPI(title="LegalFind", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(_app):
+    from retrieval.db import DATABASE_BACKEND
+
+    if DATABASE_BACKEND == "sqlite":
+        from retrieval.sqlite_backend import ensure_search_indexes
+
+        ensure_search_indexes()
+    yield
+
+
+app = FastAPI(title="LegalFind", version="1.0.0", lifespan=lifespan)
 
 
 class SearchRequest(BaseModel):

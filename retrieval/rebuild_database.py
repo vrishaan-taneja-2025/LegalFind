@@ -25,7 +25,8 @@ def load_source_data():
     holdings = {}
     candidates = []
 
-    for example in dataset:
+    print(f"Preparing {len(dataset):,} source examples for the database...", flush=True)
+    for row_number, example in enumerate(dataset, start=1):
         example_id = int(example["example_id"])
         prompt = example["citing_prompt"]
         label = int(example["label"])
@@ -58,6 +59,13 @@ def load_source_data():
                 "candidate_index": candidate_index,
                 "holding_id": holdings[normalized_text]["holding_id"],
             })
+
+        if row_number % 5000 == 0 or row_number == len(dataset):
+            print(
+                f"Database source progress: {row_number:,}/{len(dataset):,} "
+                f"examples; {len(holdings):,} unique holdings.",
+                flush=True,
+            )
 
     return examples, list(holdings.values()), candidates
 

@@ -2,9 +2,11 @@
 
 import argparse
 import os
+import shutil
 from pathlib import Path
 
 from datasets import load_dataset
+from huggingface_hub import hf_hub_download
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -12,6 +14,8 @@ DATA_PATH = BASE_DIR / "data" / "casehold-train.parquet"
 REPOSITORY = "casehold/casehold"
 CONFIGURATION = "all"
 SPLIT = "train"
+PARQUET_REVISION = "refs/convert/parquet"
+PARQUET_FILE = f"{CONFIGURATION}/{SPLIT}/0000.parquet"
 REQUIRED_COLUMNS = {
     "example_id",
     "citing_prompt",
@@ -29,8 +33,19 @@ def download_dataset(force: bool = False) -> Path:
     DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = DATA_PATH.with_suffix(".parquet.part")
     try:
-        print(f"Downloading {REPOSITORY} ({CONFIGURATION}/{SPLIT}) from Hugging Face...")
-        dataset = load_dataset(REPOSITORY, CONFIGURATION, split=SPLIT)
+        print(
+            f"Downloading {REPOSITORY} ({CONFIGURATION}/{SPLIT}) "
+            "Parquet from Hugging Face..."
+        )
+        parquet_path = hf_hub_download(
+            repo_id=REPOSITORY,
+            repo_type="dataset",
+            filename=PARQUET_FILE,
+            revision=PARQUET_REVISION,
+        )
+        dataset = load_dataset(
+            "parquet", data_files={SPLIT: parquet_path}, split=SPLIT
+        )
         missing = REQUIRED_COLUMNS.difference(dataset.column_names)
         if missing:
             raise ValueError(
@@ -40,7 +55,7 @@ def download_dataset(force: bool = False) -> Path:
         if len(dataset) == 0:
             raise ValueError("The official CaseHOLD training split is empty.")
 
-        dataset.to_parquet(str(temporary_path))
+        shutil.copyfile(parquet_path, temporary_path)
         os.replace(temporary_path, DATA_PATH)
     finally:
         temporary_path.unlink(missing_ok=True)

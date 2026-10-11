@@ -221,12 +221,14 @@ def _indexes_are_ready(expected):
 
 
 def main():
-    print(f"Preparing CaseHOLD data for {DATABASE_BACKEND}...")
+    print(f"Preparing CaseHOLD data for {DATABASE_BACKEND}...", flush=True)
     download_dataset()
+    print("Generating the holdings JSONL export...", flush=True)
     dataset_export.main()
     if DATABASE_BACKEND == "sqlite":
         from retrieval.sqlite_backend import initialize_instance
 
+        print("Preparing SQLite base tables and search indexes...", flush=True)
         initialize_instance()
         print("SQLite database and all search indexes are ready.")
         return

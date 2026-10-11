@@ -27,7 +27,8 @@ def main():
 
     documents = {}
 
-    for example in dataset:
+    print(f"Exporting {len(dataset):,} CaseHOLD examples to unique holdings...", flush=True)
+    for row_number, example in enumerate(dataset, start=1):
         example_id = example["example_id"]
         prompt = example["citing_prompt"]
         label = int(example["label"])
@@ -53,6 +54,13 @@ def main():
                 "is_correct": index == label,
                 "citing_prompt": prompt,
             })
+
+        if row_number % 5000 == 0 or row_number == len(dataset):
+            print(
+                f"Export progress: {row_number:,}/{len(dataset):,} examples; "
+                f"{len(documents):,} unique holdings.",
+                flush=True,
+            )
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
